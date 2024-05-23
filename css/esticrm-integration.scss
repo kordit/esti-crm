@@ -1,0 +1,61 @@
+#esticrm-form {
+    margin: 20px 0;
+}
+
+#esticrm-form label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+#esticrm-form input {
+    margin-bottom: 10px;
+    padding: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#esticrm-form button,
+#esticrm-run-btn {
+    padding: 10px 15px;
+    background-color: #0073aa;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+#esticrm-result {
+    margin-top: 20px;
+}
+
+#esticrm-result {
+    .element-response {
+        border: solid 2px #ccc;
+        font-size: 12px;
+
+        .single-response {
+            padding: 10px;
+            display: flex;
+
+            .key {
+                min-width: 150px;
+
+                &:after {
+                    margin-right: 5px;
+                    content: ": ";
+                }
+            }
+
+            .value {
+                font-weight: bold;
+            }
+        }
+
+        .single-response~.single-response {
+            border-top: solid 2px #ccc;
+        }
+    }
+
+    .element-response~.element-response {
+        margin-top: 40px;
+    }
+}
