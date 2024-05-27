@@ -15,12 +15,13 @@
 }
 
 #esticrm-form button,
-#esticrm-run-btn {
+#esticrm-save-cpt-btn {
     padding: 10px 15px;
     background-color: #0073aa;
     color: #fff;
     border: none;
     cursor: pointer;
+    margin-top: 10px;
 }
 
 #esticrm-result {
@@ -35,6 +36,7 @@
         .single-response {
             padding: 10px;
             display: flex;
+            align-items: center;
 
             .key {
                 min-width: 150px;
@@ -47,6 +49,7 @@
 
             .value {
                 font-weight: bold;
+                margin-right: 10px;
             }
         }
 
@@ -58,4 +61,21 @@
     .element-response~.element-response {
         margin-top: 40px;
     }
+}
+
+#field-mapping {
+    margin-top: 20px;
+}
+
+.field-mapping {
+    margin-bottom: 10px;
+}
+
+.field-mapping label {
+    display: inline-block;
+    width: 100px;
+}
+
+.field-mapping select {
+    margin-left: 10px;
 }
