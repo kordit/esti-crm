@@ -175,12 +175,18 @@ jQuery(document).ready(function ($) {
                 if (response.success) {
                     console.log('Loaded ACF fields for', cpt, ':', response.data);  // Logujemy dane pól ACF
                     var acfFieldsHtml = '<h3>Pola ACF</h3>';
+                    var fieldsSelect = $('.field-mapping-select');
+
                     $.each(response.data, function (name, label) {
                         acfFieldsHtml += '<div class="acf-field">';
                         acfFieldsHtml += '<input type="checkbox" class="acf-field-checkbox" data-name="' + name + '" data-label="' + label + '">';
                         acfFieldsHtml += '<label>' + label + '</label>';
                         acfFieldsHtml += '</div>';
+
+                        // Dodajemy pola ACF do selecta
+                        fieldsSelect.append('<option value="acf_' + name + '">' + label + '</option>');
                     });
+
                     $('#acf-fields').empty().append(acfFieldsHtml);
 
                     // Restore previously selected ACF fields
@@ -191,7 +197,7 @@ jQuery(document).ready(function ($) {
                             if (Array.isArray(selectedAcfFields)) {
                                 selectedAcfFields.forEach(function (field) {
                                     $('.acf-field-checkbox[data-name="' + field + '"]').prop('checked', true);
-                                    $('.field-mapping-select').append('<option value="' + field + '">' + field + '</option>');
+                                    fieldsSelect.append('<option value="acf_' + field + '">' + field + '</option>');
                                 });
                             }
                         } catch (e) {
@@ -200,13 +206,12 @@ jQuery(document).ready(function ($) {
                     }
 
                     $('.acf-field-checkbox').on('change', function () {
-                        var fieldsSelect = $('.field-mapping-select');
                         var fieldName = $(this).data('name');
                         var fieldLabel = $(this).data('label');
                         if (this.checked) {
-                            fieldsSelect.append('<option value="' + fieldName + '">' + fieldLabel + '</option>');
+                            fieldsSelect.append('<option value="acf_' + fieldName + '">' + fieldLabel + '</option>');
                         } else {
-                            fieldsSelect.find('option[value="' + fieldName + '"]').remove();
+                            fieldsSelect.find('option[value="acf_' + fieldName + '"]').remove();
                         }
                         updateSelectedFields();
                     });
@@ -242,6 +247,11 @@ jQuery(document).ready(function ($) {
             success: function (response) {
                 if (response.success) {
                     alert(response.data);
+                    $('#mapping-table').hide();
+                    $('#esticrm-save-mapping-btn').hide();
+                    if ($('#start-integration-btn').length === 0) {
+                        $('<button id="start-integration-btn">Rozpocznij integrację</button>').insertAfter('#mapping-table');
+                    }
                 } else {
                     alert('Failed to save field mapping: ' + response.data);
                 }
@@ -251,6 +261,7 @@ jQuery(document).ready(function ($) {
             }
         });
     }
+
 
     function updateSelectedFields() {
         var selectedFields = [];
@@ -335,19 +346,19 @@ jQuery(document).ready(function ($) {
                                 mappingTableHtml += '<td><select class="field-mapping-select" name="' + key + '">';
                                 mappingTableHtml += '<option value="">Nie importuj</option>';
                                 mappingTableHtml += '<option disabled>Pola Wordpress</option>';
-                                mappingTableHtml += '<option value="title">Title</option>';
-                                mappingTableHtml += '<option value="thumbnail">Thumbnail</option>';
-                                mappingTableHtml += '<option value="excerpt">Excerpt</option>';
-                                mappingTableHtml += '<option value="content">Content</option>';
+                                mappingTableHtml += '<option value="wordpress_title">Title</option>';
+                                mappingTableHtml += '<option value="wordpress_thumbnail">Thumbnail</option>';
+                                mappingTableHtml += '<option value="wordpress_excerpt">Excerpt</option>';
+                                mappingTableHtml += '<option value="wordpress_content">Content</option>';
                                 mappingTableHtml += '<option disabled>Taksonomie</option>';
                                 if (cptFields.terms) {
                                     $.each(cptFields.terms, function (taxonomy, label) {
-                                        mappingTableHtml += '<option value="' + taxonomy + '">' + label + '</option>';
+                                        mappingTableHtml += '<option value="taxonomy_' + taxonomy + '">' + label + '</option>';
                                     });
                                 }
                                 mappingTableHtml += '<option disabled>Pola ACF</option>';
                                 $.each(acfFields, function (name, label) {
-                                    mappingTableHtml += '<option value="' + name + '">' + label + '</option>';
+                                    mappingTableHtml += '<option value="acf_' + name + '">' + label + '</option>';
                                 });
                                 mappingTableHtml += '</select></td>';
                                 mappingTableHtml += '</tr>';
@@ -409,6 +420,9 @@ jQuery(document).ready(function ($) {
             success: function (response) {
                 if (response.success) {
                     alert(response.data);
+                    $('#mapping-table').hide();
+                    $('#esticrm-save-mapping-btn').hide();
+                    $('#start-integration-btn').show(); // Pokaż przycisk "Rozpocznij integrację"
                 } else {
                     alert('Failed to save mapping: ' + response.data);
                 }
@@ -419,6 +433,37 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    $('#start-integration-btn').on('click', startIntegration);
 
+    function startIntegration() {
+        $.ajax({
+            url: esticrm_ajax_obj.ajax_url,
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                action: 'esticrm_start_integration',
+                esticrm_nonce: esticrm_ajax_obj.nonce
+            },
+            success: function (response) {
+                if (response.success) {
+                    var logHtml = '<div id="integration-log"><h3>Log integracji</h3><ul>';
+                    response.data.forEach(function (message) {
+                        logHtml += '<li>' + message + '</li>';
+                    });
+                    logHtml += '</ul></div>';
+                    $('#integration-log').remove(); // Remove any existing log
+                    $('#mapping-table').after(logHtml); // Append new log after the mapping table
+                    console.log(response.data); // Optional: Log the integration details
+                } else {
+                    console.log('Failed to start integration: ' + response.data);
+                }
+            },
+            error: function (xhr, status, error) {
+                console.log('Error: ' + error);
+            }
+        });
+    }
+
+    $(document).on('click', '#start-integration-btn', startIntegration);
 
 });
