@@ -262,7 +262,6 @@ jQuery(document).ready(function ($) {
         });
     }
 
-
     function updateSelectedFields() {
         var selectedFields = [];
         $('.acf-field-checkbox:checked').each(function () {
@@ -433,29 +432,36 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    $('#start-integration-btn').on('click', startIntegration);
+    $('#start-integration-btn').on('click', function () {
+        var index = 0;
+        $('#integration-log').remove(); // Remove any existing log
+        $('#mapping-table').after('<div id="integration-log"><h3>Log integracji</h3><ul></ul></div>'); // Append new log after the mapping table
+        processIntegration(index);
+    });
 
-    function startIntegration() {
+    function processIntegration(index) {
         $.ajax({
             url: esticrm_ajax_obj.ajax_url,
             type: 'POST',
             dataType: 'json',
             data: {
                 action: 'esticrm_start_integration',
+                index: index,
                 esticrm_nonce: esticrm_ajax_obj.nonce
             },
             success: function (response) {
                 if (response.success) {
-                    var logHtml = '<div id="integration-log"><h3>Log integracji</h3><ul>';
-                    response.data.log.forEach(function (message) {
-                        logHtml += '<li>' + message + '</li>';
-                    });
-                    logHtml += '</ul></div>';
-                    $('#integration-log').remove(); // Remove any existing log
-                    $('#mapping-table').after(logHtml); // Append new log after the mapping table
-                    console.log(response.data); // Optional: Log the integration details
+                    $('#integration-log ul').append('<li>' + response.data.log + '</li>');
+
+                    if (response.data.index < response.data.total) {
+                        setTimeout(function () {
+                            processIntegration(response.data.index);
+                        }, 1000);
+                    } else {
+                        alert('Integracja zakończona!');
+                    }
                 } else {
-                    console.log('Failed to start integration: ' + response.data);
+                    alert('Failed to start integration: ' + response.data);
                 }
             },
             error: function (xhr, status, error) {
@@ -463,9 +469,4 @@ jQuery(document).ready(function ($) {
             }
         });
     }
-
-
-
-    $(document).on('click', '#start-integration-btn', startIntegration);
-
 });

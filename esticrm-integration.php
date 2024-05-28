@@ -164,12 +164,91 @@ function esticrm_fetch_api_data()
 }
 
 
+function esticrm_process_single_record($record, $field_mapping, $cpt, $existing_post_map)
+{
+    $title_field = array_search('wordpress_title', $field_mapping);
+    $post_title = isset($record[$title_field]) ? $record[$title_field] : '';
+
+    if (empty($post_title)) {
+        return "<div class='log-entry'>Pominęto wpis, brak tytułu.</div>";
+    }
+
+    $post_data = array(
+        'post_type' => $cpt,
+        'post_status' => 'publish',
+        'post_title' => $post_title,
+    );
+
+    if (isset($existing_post_map[$post_title])) {
+        $post_data['ID'] = $existing_post_map[$post_title];
+        $post_id = wp_update_post($post_data);
+        $action = "zaktualizowano";
+    } else {
+        $post_id = wp_insert_post($post_data);
+        $action = "dodano";
+    }
+
+    if (!is_wp_error($post_id)) {
+        $log_message = "<div class='log-entry'>Wpis '$post_title' został $action.";
+        $log_message .= "<div class='fields-updated'>Pola uzupełnione: ";
+
+        $taxonomy_terms = [];
+
+        foreach ($field_mapping as $key => $mapped_field) {
+            if (isset($record[$key])) {
+                if (strpos($mapped_field, 'wordpress_') === 0) {
+                    $wp_field = str_replace('wordpress_', '', $mapped_field);
+                    if ($wp_field !== 'title') { // Title is already set in post_data
+                        update_post_meta($post_id, $wp_field, $record[$key]);
+                        $log_message .= "<div class='field'><span class='field-name'>$wp_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
+                    }
+                } elseif (strpos($mapped_field, 'taxonomy_') === 0) {
+                    $taxonomy = str_replace('taxonomy_', '', $mapped_field);
+                    $term = term_exists($record[$key], $taxonomy);
+                    if (!$term) {
+                        $term = wp_insert_term($record[$key], $taxonomy);
+                    }
+                    if (!is_wp_error($term)) {
+                        $taxonomy_terms[$taxonomy][] = (int)$term['term_id'];
+                        $log_message .= "<div class='field'><span class='field-name'>$taxonomy</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
+                    }
+                } elseif (strpos($mapped_field, 'acf_') === 0) {
+                    $acf_field = str_replace('acf_', '', $mapped_field);
+                    update_field($acf_field, $record[$key], $post_id);
+                    $log_message .= "<div class='field'><span class='field-name'>$acf_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
+                }
+            }
+        }
+
+        // Assign taxonomy terms
+        foreach ($taxonomy_terms as $taxonomy => $terms) {
+            wp_set_post_terms($post_id, $terms, $taxonomy);
+        }
+
+        // Set post thumbnail
+        if (isset($record['main_picture'])) {
+            $attachment_id = et_get_attachment($record['main_picture']);
+            if (!is_wp_error($attachment_id)) {
+                set_post_thumbnail($post_id, $attachment_id);
+                $log_message .= "<div class='field'><span class='field-name'>post_thumbnail</span>: <span class='field-value'>$record[main_picture]</span></div>";
+            }
+        }
+
+        $log_message .= "</div></div>";
+        return $log_message;
+    } else {
+        return "<div class='log-entry'>Wpis '$post_title' nie został dodany, błąd: " . $post_id->get_error_message() . "</div>";
+    }
+}
+
 function esticrm_start_integration()
 {
     if (!isset($_POST['esticrm_nonce']) || !wp_verify_nonce($_POST['esticrm_nonce'], 'esticrm_nonce_action')) {
         wp_send_json_error('Invalid nonce');
         return;
     }
+
+    $index = isset($_POST['index']) ? intval($_POST['index']) : 0;
 
     $id = get_option('esticrm_id');
     $token = get_option('esticrm_token');
@@ -187,8 +266,6 @@ function esticrm_start_integration()
         return;
     }
 
-    $logs = [];
-    $api_titles = [];
     $existing_posts = get_posts(array(
         'post_type' => $cpt,
         'numberposts' => -1,
@@ -201,96 +278,17 @@ function esticrm_start_integration()
         $existing_post_map[$existing_post->post_title] = $existing_post->ID;
     }
 
-    foreach ($api_data as $record) {
-        $title_field = array_search('wordpress_title', $field_mapping);
-        $post_title = isset($record[$title_field]) ? $record[$title_field] : '';
+    $log = esticrm_process_single_record($api_data[$index], $field_mapping, $cpt, $existing_post_map);
 
-        if (empty($post_title)) {
-            $logs[] = "<div class='log-entry'>Pominęto wpis, brak tytułu.</div>";
-            continue;
-        }
+    $response = array(
+        'log' => $log,
+        'index' => $index + 1,
+        'total' => count($api_data),
+    );
 
-        $api_titles[] = $post_title;
-        $post_data = array(
-            'post_type' => $cpt,
-            'post_status' => 'publish',
-            'post_title' => $post_title,
-        );
-
-        if (isset($existing_post_map[$post_title])) {
-            $post_data['ID'] = $existing_post_map[$post_title];
-            $post_id = wp_update_post($post_data);
-            $action = "zaktualizowano";
-        } else {
-            $post_id = wp_insert_post($post_data);
-            $action = "dodano";
-        }
-
-        if (!is_wp_error($post_id)) {
-            $log_message = "<div class='log-entry'>Wpis '$post_title' został $action.";
-            $log_message .= "<div class='fields-updated'>Pola uzupełnione: ";
-
-            $taxonomy_terms = [];
-
-            foreach ($field_mapping as $key => $mapped_field) {
-                if (isset($record[$key])) {
-                    if (strpos($mapped_field, 'wordpress_') === 0) {
-                        $wp_field = str_replace('wordpress_', '', $mapped_field);
-                        if ($wp_field !== 'title') { // Title is already set in post_data
-                            update_post_meta($post_id, $wp_field, $record[$key]);
-                            $log_message .= "<div class='field'><span class='field-name'>$wp_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
-                        }
-                    } elseif (strpos($mapped_field, 'taxonomy_') === 0) {
-                        $taxonomy = str_replace('taxonomy_', '', $mapped_field);
-                        $term = term_exists($record[$key], $taxonomy);
-                        if (!$term) {
-                            $term = wp_insert_term($record[$key], $taxonomy);
-                        }
-                        if (!is_wp_error($term)) {
-                            $taxonomy_terms[$taxonomy][] = (int)$term['term_id'];
-                            $log_message .= "<div class='field'><span class='field-name'>$taxonomy</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
-                        }
-                    } elseif (strpos($mapped_field, 'acf_') === 0) {
-                        $acf_field = str_replace('acf_', '', $mapped_field);
-                        update_field($acf_field, $record[$key], $post_id);
-                        $log_message .= "<div class='field'><span class='field-name'>$acf_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
-                    }
-                }
-            }
-
-            // Assign taxonomy terms
-            foreach ($taxonomy_terms as $taxonomy => $terms) {
-                wp_set_post_terms($post_id, $terms, $taxonomy);
-            }
-
-            // Set post thumbnail
-            if (isset($record['main_picture'])) {
-                $attachment_id = et_get_attachment($record['main_picture']);
-                if (!is_wp_error($attachment_id)) {
-                    set_post_thumbnail($post_id, $attachment_id);
-                    $log_message .= "<div class='field'><span class='field-name'>post_thumbnail</span>: <span class='field-value'>$record[main_picture]</span></div>";
-                }
-            }
-
-            $log_message .= "</div></div>";
-            $logs[] = $log_message;
-        } else {
-            $logs[] = "<div class='log-entry'>Wpis '$post_title' nie został dodany, błąd: " . $post_id->get_error_message() . "</div>";
-        }
-    }
-
-    foreach ($existing_post_map as $existing_title => $existing_id) {
-        if (!in_array($existing_title, $api_titles)) {
-            wp_delete_post($existing_id, true);
-            $logs[] = "<div class='log-entry'>Wpis '$existing_title' został usunięty, ponieważ nie jest już obecny w danych API.</div>";
-        }
-    }
-
-    wp_send_json_success(array('log' => $logs));
+    wp_send_json_success($response);
 }
 add_action('wp_ajax_esticrm_start_integration', 'esticrm_start_integration');
-
-// AJAX handler to start mapping and fetch first record
 // AJAX handler to start mapping and fetch first record
 function esticrm_start_mapping()
 {
