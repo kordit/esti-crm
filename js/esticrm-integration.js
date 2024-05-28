@@ -447,7 +447,7 @@ jQuery(document).ready(function ($) {
             success: function (response) {
                 if (response.success) {
                     var logHtml = '<div id="integration-log"><h3>Log integracji</h3><ul>';
-                    response.data.forEach(function (message) {
+                    response.data.log.forEach(function (message) {
                         logHtml += '<li>' + message + '</li>';
                     });
                     logHtml += '</ul></div>';
@@ -463,6 +463,8 @@ jQuery(document).ready(function ($) {
             }
         });
     }
+
+
 
     $(document).on('click', '#start-integration-btn', startIntegration);
 
