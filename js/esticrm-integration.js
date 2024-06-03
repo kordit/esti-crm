@@ -432,13 +432,6 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    $('#start-integration-btn').on('click', function () {
-        var index = 0;
-        $('#integration-log').remove(); // Remove any existing log
-        $('#mapping-table').after('<div id="integration-log"><h3>Log integracji</h3><ul></ul></div>'); // Append new log after the mapping table
-        processIntegration(index);
-    });
-
     function processIntegration(index) {
         $.ajax({
             url: esticrm_ajax_obj.ajax_url,
@@ -458,7 +451,7 @@ jQuery(document).ready(function ($) {
                             processIntegration(response.data.index);
                         }, 1000);
                     } else {
-                        alert('Integracja zakończona!');
+                        $('#image-progress').text('Integracja zakończona!');
                     }
                 } else {
                     alert('Failed to start integration: ' + response.data);
@@ -469,4 +462,15 @@ jQuery(document).ready(function ($) {
             }
         });
     }
+
+    $('#start-integration-btn').on('click', function () {
+        var index = 0;
+        $('#integration-log').remove();
+        $('#mapping-table').after('<div id="integration-log"><h3>Log integracji</h3><ul></ul><div id="image-progress"><div class="spinner"></div>Trwa integracja, proszę czekać...</div></div>');
+        processIntegration(index);
+    });
+
+
+
+
 });

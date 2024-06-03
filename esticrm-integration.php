@@ -132,7 +132,8 @@ function esticrm_fetch_api_data()
         return new WP_Error('missing_data', 'ID or token is missing');
     }
 
-    $api_url = "https://app.esticrm.pl/apiClient/offer/list?company={$id}&token={$token}";
+    // $api_url = "https://app.esticrm.pl/apiClient/offer/list?company={$id}&token={$token}";
+    $api_url = 'https://zielonka.ergotree.pl/json.json';
     $response = @file_get_contents($api_url);
 
     if ($response === FALSE) {
@@ -189,16 +190,15 @@ function esticrm_process_single_record($record, $field_mapping, $cpt, $existing_
     }
 
     if (!is_wp_error($post_id)) {
-        $log_message = "<div class='log-entry'>Wpis '$post_title' został $action.";
-        $log_message .= "<div class='fields-updated'>Pola uzupełnione: ";
-
+        $log_message = "<div class='log-entry'>$post_title został $action.<div class='fields-updated'>Pola uzupełnione: ";
         $taxonomy_terms = [];
+        $acf_gallery = get_field('acf_gallery_field', $post_id) ?: [];
 
         foreach ($field_mapping as $key => $mapped_field) {
             if (isset($record[$key])) {
                 if (strpos($mapped_field, 'wordpress_') === 0) {
                     $wp_field = str_replace('wordpress_', '', $mapped_field);
-                    if ($wp_field !== 'title') { // Title is already set in post_data
+                    if ($wp_field !== 'title') {
                         update_post_meta($post_id, $wp_field, $record[$key]);
                         $log_message .= "<div class='field'><span class='field-name'>$wp_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
                     }
@@ -214,18 +214,30 @@ function esticrm_process_single_record($record, $field_mapping, $cpt, $existing_
                     }
                 } elseif (strpos($mapped_field, 'acf_') === 0) {
                     $acf_field = str_replace('acf_', '', $mapped_field);
-                    update_field($acf_field, $record[$key], $post_id);
+
+                    if (is_array($record[$key])) {
+                        foreach ($record[$key] as $image_url) {
+                            if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $image_url)) {
+                                $attachment_id = et_get_attachment($image_url);
+                                if (!is_wp_error($attachment_id)) {
+                                    $acf_gallery[] = $attachment_id;
+                                }
+                            }
+                        }
+                        update_field($acf_field, $acf_gallery, $post_id);
+                    } else {
+                        update_field($acf_field, $record[$key], $post_id);
+                    }
+
                     $log_message .= "<div class='field'><span class='field-name'>$acf_field</span>: <span class='field-value'>" . $record[$key] . "</span></div>";
                 }
             }
         }
 
-        // Assign taxonomy terms
         foreach ($taxonomy_terms as $taxonomy => $terms) {
             wp_set_post_terms($post_id, $terms, $taxonomy);
         }
 
-        // Set post thumbnail
         if (isset($record['main_picture'])) {
             $attachment_id = et_get_attachment($record['main_picture']);
             if (!is_wp_error($attachment_id)) {
@@ -248,12 +260,11 @@ function esticrm_start_integration()
         return;
     }
 
-    $index = isset($_POST['index']) ? intval($_POST['index']) : 0;
-
     $id = get_option('esticrm_id');
     $token = get_option('esticrm_token');
     $cpt = get_option('esticrm_cpt');
     $field_mapping = get_option('esticrm_field_mapping', array());
+    $index = isset($_POST['index']) ? intval($_POST['index']) : 0;
 
     if (empty($id) || empty($token) || empty($cpt) || empty($field_mapping)) {
         wp_send_json_error('Missing required data for integration');
@@ -266,30 +277,37 @@ function esticrm_start_integration()
         return;
     }
 
+    $logs = [];
+    $api_titles = [];
     $existing_posts = get_posts(array(
         'post_type' => $cpt,
         'numberposts' => -1,
         'post_status' => 'publish',
     ));
 
-    // Create a map of existing post titles to their IDs
     $existing_post_map = [];
     foreach ($existing_posts as $existing_post) {
         $existing_post_map[$existing_post->post_title] = $existing_post->ID;
     }
 
-    $log = esticrm_process_single_record($api_data[$index], $field_mapping, $cpt, $existing_post_map);
-
-    $response = array(
-        'log' => $log,
-        'index' => $index + 1,
-        'total' => count($api_data),
-    );
-
-    wp_send_json_success($response);
+    if ($index < count($api_data)) {
+        $record = $api_data[$index];
+        $log_entry = esticrm_process_single_record($record, $field_mapping, $cpt, $existing_post_map);
+        wp_send_json_success(array('log' => $log_entry, 'index' => $index + 1, 'total' => count($api_data)));
+    } else {
+        foreach ($existing_post_map as $existing_title => $existing_id) {
+            if (!in_array($existing_title, $api_titles)) {
+                wp_delete_post($existing_id, true);
+                $logs[] = "<div class='log-entry'>Wpis '$existing_title' został usunięty, ponieważ nie jest już obecny w danych API.</div>";
+            }
+        }
+        wp_send_json_success(array('log' => implode('', $logs), 'index' => $index, 'total' => count($api_data)));
+    }
 }
 add_action('wp_ajax_esticrm_start_integration', 'esticrm_start_integration');
-// AJAX handler to start mapping and fetch first record
+
+
+
 function esticrm_start_mapping()
 {
     if (!isset($_POST['esticrm_nonce']) || !wp_verify_nonce($_POST['esticrm_nonce'], 'esticrm_nonce_action')) {
